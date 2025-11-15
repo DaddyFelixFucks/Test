@@ -1,149 +1,157 @@
-local g = cloneref(game)
-if not g:IsLoaded() then g.Loaded:Wait() end
+--// DaddyFelix Triggerbot – Fixed & Clean \\--
 
-local w = g:GetService("Workspace")
-local rs = g:GetService("RunService")
-local ps = g:GetService("Players")
+local Game = cloneref(game)
+if not Game:IsLoaded() then Game.Loaded:Wait() end
 
-local cfg = getgenv().DaddyFelix
-if not cfg then error("no cfg") end
+local Workspace = Game:GetService("Workspace")
+local RunService = Game:GetService("RunService")
+local Players = Game:GetService("Players")
 
-local lp = ps.LocalPlayer
-local lc = lp.Character or lp.CharacterAdded:Wait()
-local lh = lc:WaitForChild("Humanoid")
-local lrp = lc:WaitForChild("HumanoidRootPart")
-local lg = lp:WaitForChild("PlayerGui")
-local cam = w.CurrentCamera
+local Config = getgenv().DaddyFelix
+if not Config then error("DaddyFelix config missing!") end
 
-local lt = tick()
-local cc
+local LocalPlayer = Players.LocalPlayer
+local LocalCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local LocalHumanoid = LocalCharacter:WaitForChild("Humanoid")
+local LocalRootPart = LocalCharacter:WaitForChild("HumanoidRootPart")
+local LocalGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = Workspace.CurrentCamera
 
-local function hc()
-    if cc then cc:Disconnect() end
-    cc = lp.Chatted:Connect(function(m)
-        if m:lower() == cfg.Triggerbot.Keyword:lower() then
-            cfg.Triggerbot.Enabled = not cfg.Triggerbot.Enabled
-            print("[DF] " .. (cfg.Triggerbot.Enabled and "ON" or "OFF"))
+local LastActivation = tick()
+local ChatConn
+
+-- Toggle with keyword
+local function HookChat()
+    if ChatConn then ChatConn:Disconnect() end
+    ChatConn = LocalPlayer.Chatted:Connect(function(msg)
+        if msg:lower() == Config.Triggerbot.Keyword:lower() then
+            Config.Triggerbot.Enabled = not Config.Triggerbot.Enabled
+            print("[DaddyFelix] Triggerbot " .. (Config.Triggerbot.Enabled and "ON" or "OFF"))
         end
     end)
 end
-hc()
+HookChat()
 
-lp.CharacterAdded:Connect(function(c)
-    lc = c
-    lh = c:WaitForChild("Humanoid")
-    lrp = c:WaitForChild("HumanoidRootPart")
-    hc()
+LocalPlayer.CharacterAdded:Connect(function(char)
+    LocalCharacter = char
+    LocalHumanoid = char:WaitForChild("Humanoid")
+    LocalRootPart = char:WaitForChild "HumanoidRootPart"
+    HookChat()
 end)
 
-local circ = Drawing.new("Circle")
-circ.Transparency = 1
-circ.Color = Color3.new(1, 1, 1)
-circ.Filled = true
-circ.Radius = 100
-circ.NumSides = 100
-circ.Position = cam.ViewportSize / 2
+-- Circle
+local Circle = Drawing.new("Circle")
+Circle.Visible = false
+Circle.Transparency = 1
+Circle.Color = Color3.fromRGB(255,255,255)
+Circle.Filled = true
+Circle.Radius = 100
+Circle.NumSides = 100
+Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
 
-local function wall(p)
-    if not cfg.Checks.WallCheck then return false end
-    local cp = cam.CFrame.Position
-    local dr = p.Position - cp
-    local ryp = RaycastParams.new()
-    ryp.FilterDescendantsInstances = {lc}
-    ryp.FilterType = Enum.RaycastFilterType.Blacklist
-    ryp.IgnoreWater = true
-    local res = w:Raycast(cp, dr, ryp)
-    return not res or res.Instance:IsDescendantOf(p.Parent)
+-- Wall Check
+local function WallCheck(Part)
+    if not Config.Checks.WallCheck then return false end
+    local camPos = Camera.CFrame.Position
+    local dir = (Part.Position - camPos)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {LocalCharacter}
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.IgnoreWater = true
+    local result = Workspace:Raycast(camPos, dir, params)
+    return not result or result.Instance:IsDescendantOf(Part.Parent)
 end
 
-local function ff(ch)
-    if not cfg.Checks.ForcefieldCheck then return false end
-    return ch:FindFirstChildOfClass("ForceField")
+-- Forcefield Check
+local function ForcefieldCheck(Char)
+    if not Config.Checks.ForcefieldCheck then return false end
+    return Char:FindFirstChildOfClass("ForceField")
 end
 
-local function ko(ch)
-    if not cfg.Checks.KOCheck then return false end
-    local h = ch:FindFirstChildOfClass("Humanoid")
-    if not h or h.Health <= 0 then return true end
-    local s = h:GetState()
-    if s == Enum.HumanoidStateType.Ragdoll or
-       s == Enum.HumanoidStateType.Dead or
-       s == Enum.HumanoidStateType.FallingDown then
+-- KO Check
+local function KOCheck(Char)
+    if not Config.Checks.KOCheck then return false end
+    local hum = Char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return true end
+    local state = hum:GetState()
+    if state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.Dead or state == Enum.HumanoidStateType.FallingDown then
         return true
     end
-    local crt = ch:FindFirstChild("creator")
-    if crt and crt:FindFirstChild("tag") then return true end
+    local creator = Char:FindFirstChild("creator")
+    if creator and creator:FindFirstChild("tag") then return true end
     return false
 end
 
-local function bl(t)
-    if not t then return false end
-    local n = t.Name:lower()
-    for k in pairs(cfg.Tools.Blacklist) do
-        if n:find(k) then return true end
+-- Blacklist Tool
+local function IsBlacklisted(Tool)
+    if not Tool then return false end
+    local name = Tool.Name:lower()
+    for word in pairs(Config.Tools.Blacklist) do
+        if name:find(word) then return true end
     end
     return false
 end
 
-local function prd(pt, rt)
-    local v = rt and rt.Velocity or Vector3.zero
-    return pt.Position + (v * cfg.Triggerbot.Prediction)
+-- Prediction
+local function Predict(Part, Root)
+    local vel = Root and Root.Velocity or Vector3.zero
+    return Part.Position + (vel * Config.Triggerbot.Prediction)
 end
 
-local function crs()
-    local g = lg:FindFirstChild("MainScreenGui") or
-              lg:FindFirstChild("ScreenGui") or
-              lg:FindFirstChild("CoreGui")
-    if not g then return end
-    return g:FindFirstChild("Aim") or
-           g:FindFirstChild("AimUI") or
-           g:FindFirstChild("Crosshair")
+-- Cursor
+local function GetCursor()
+    local gui = LocalGui:FindFirstChild("MainScreenGui") or LocalGui:FindFirstChild("ScreenGui") or LocalGui:FindFirstChild("CoreGui")
+    if not gui then return nil end
+    return gui:FindFirstChild("Aim") or gui:FindFirstChild("AimUI") or gui:FindFirstChild("Crosshair")
 end
 
-local function tar()
-    local md = math.huge
-    local mt = nil
-    for _, pl in ps:GetPlayers() do
-        if pl ~= lp and pl.Character then
-            local ch = pl.Character
-            if ko(ch) or ff(ch) then continue end
-            local rt = ch:FindFirstChild("HumanoidRootPart")
-            if not rt then continue end
-            for _, pr in ch:GetChildren() do
-                if (pr:IsA("BasePart") or pr:IsA("MeshPart")) and pr.Transparency < 1 then
-                    local pp = prd(pr, rt)
-                    local sc, on = cam:WorldToViewportPoint(pp)
-                    if on then
-                        local dst = (Vector2.new(sc.X, sc.Y) - circ.Position).Magnitude
-                        if wall(pr) and dst < circ.Radius and dst < md then
-                            md = dst
-                            mt = pl
-                        end
+-- Target
+local function GetTarget()
+    local best = math.huge
+    local target = nil
+    for _, pl in Players:GetPlayers() do
+        if pl == LocalPlayer or not pl.Character then continue end
+        local char = pl.Character
+        if KOCheck(char) or ForcefieldCheck(char) then continue end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+        for _, part in char:GetChildren() do
+            if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Transparency < 1 then
+                local pred = Predict(part, root)
+                local scr, onScreen = Camera:WorldToViewportPoint(pred)
+                if onScreen then
+                    local dist = (Vector2.new(scr.X, scr.Y) - Circle.Position).Magnitude
+                    if WallCheck(part) and dist < Circle.Radius and dist < best then
+                        best = dist
+                        target = pl
                     end
                 end
             end
         end
     end
-    return mt
+    return target
 end
 
-rs.Heartbeat:Connect(function()
-    if not cfg.Triggerbot.Enabled then return end
-    local cu = crs()
-    if cu then
-        circ.Position = cu.AbsolutePosition
-        circ.Radius = math.max(cu.AbsoluteSize.X, cu.AbsoluteSize.Y) * 1.5
+-- Main Loop
+RunService.Heartbeat:Connect(function()
+    if not Config.Triggerbot.Enabled then return end
+
+    local cursor = GetCursor()
+    if cursor then
+        Circle.Position = cursor.AbsolutePosition
+        Circle.Radius = math.max(cursor.AbsoluteSize.X, cursor.AbsoluteSize.Y) * 2.5
     end
-    local t = tar()
-    if t and (tick() - lt) >= cfg.Triggerbot.Delay then
-        local tl = lc:FindFirstChildOfClass("Tool")
-        if tl and tl:FindFirstChild("Handle") and not bl(tl) then
-            tl:Activate()
-            task.wait(0.05)
-            tl:Deactivate()
-            lt = tick()
+
+    local target = GetTarget()
+    if target and (tick() - LastActivation) >= Config.Triggerbot.Delay then
+        local tool = LocalCharacter:FindFirstChildOfClass("Tool")
+        if tool and tool:FindFirstChild("Handle") and not IsBlacklisted(tool) then
+            tool:Activate()
+            task.wait(0.1)
+            tool:Deactivate()
+            LastActivation = tick()
         end
     end
 end)
 
-print("[DF] goated")
+print("[DaddyFelix] Loaded – type '"..Config.Triggerbot.Keyword.."' to toggle.")
